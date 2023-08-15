@@ -42,6 +42,7 @@ jobs:
 
   build_test:
 #    needs: test
+    needs: [ validate_gradle_wrapper ]
     name: Build/test Docker image
     runs-on: ubuntu-latest
     strategy:
