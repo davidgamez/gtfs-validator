@@ -2,7 +2,7 @@ name: Docker image
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, * ]
   release:
     types: [ prereleased, released ]
 
@@ -92,7 +92,7 @@ jobs:
             DOCKER_TAGS="${DOCKER_IMAGE}:${AXION_VERSION}"
           else
             # tag pushes to master as "latest"
-            DOCKER_TAGS="${DOCKER_IMAGE}:latest"
+            DOCKER_TAGS="${DOCKER_IMAGE}:multipart-test"
           fi
           echo "Set DOCKER_TAGS=${DOCKER_TAGS}"
 
@@ -120,6 +120,7 @@ jobs:
   push_multiplatform:
     name: Build/Push multi-platform image
     needs: build_test
+    if: false # disable push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
