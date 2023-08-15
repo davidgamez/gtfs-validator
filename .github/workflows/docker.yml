@@ -2,7 +2,7 @@ name: Docker image
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, * ]
   release:
     types: [ prereleased, released ]
 
@@ -89,7 +89,7 @@ jobs:
             DOCKER_TAGS="${DOCKER_IMAGE}:${AXION_VERSION}"
           else
             # tag pushes to master as "latest"
-            DOCKER_TAGS="${DOCKER_IMAGE}:latest"
+            DOCKER_TAGS="${DOCKER_IMAGE}:multipart-test"
           fi
           echo "Set DOCKER_TAGS=${DOCKER_TAGS}"
 
@@ -97,7 +97,7 @@ jobs:
           echo ::set-output name=tags::${DOCKER_TAGS}
           echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 
-      # Build and push steps are split up in order to test the built contaire image in between
+      # Build and push steps are split up in order to test the built container image in between
       # - build-args and labels inputs _must_ be kept matching between both to prevent rebuild
       # - See: https://github.com/docker/build-push-action/blob/master/docs/advanced/test-before-push.md
       - name: Build Docker container image
