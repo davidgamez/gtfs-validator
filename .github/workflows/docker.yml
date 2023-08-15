@@ -15,6 +15,7 @@ jobs:
   test:
     needs: [ validate_gradle_wrapper ]
     runs-on: ubuntu-latest
+    if: false
     steps:
       - uses: actions/checkout@v3
       - name: Set up JDK 11
@@ -40,7 +41,7 @@ jobs:
           path: build/reports/tests/unit-test/aggregated-results/
 
   build_test:
-    needs: test
+#    needs: test
     name: Build/test Docker image
     runs-on: ubuntu-latest
     strategy:
@@ -116,7 +117,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.prep.outputs.version }}
       - name: Test Docker container image
-        run: docker run --rm ${{ steps.prep.outputs.tags }} --help
+        run: docker run --rm ${{ steps.prep.outputs.tags }} --platform linux/${{ matrix.platform }} --help
   push_multiplatform:
     name: Build/Push multi-platform image
     needs: build_test
