@@ -117,7 +117,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.prep.outputs.version }}
       - name: Test Docker container image
-        run: docker run --rm ${{ steps.prep.outputs.tags }} --platform linux/${{ matrix.platform }} --help
+        run: docker run --rm --platform linux/${{ matrix.platform }} ${{ steps.prep.outputs.tags }} --help
   push_multiplatform:
     name: Build/Push multi-platform image
     needs: build_test
