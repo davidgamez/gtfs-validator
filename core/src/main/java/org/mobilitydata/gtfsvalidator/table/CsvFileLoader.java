@@ -10,11 +10,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import org.mobilitydata.gtfsvalidator.notice.CsvParsingFailedNotice;
 import org.mobilitydata.gtfsvalidator.notice.EmptyFileNotice;
-import org.mobilitydata.gtfsvalidator.notice.MissingRecommendedFileNotice;
-import org.mobilitydata.gtfsvalidator.notice.MissingRequiredFileNotice;
 import org.mobilitydata.gtfsvalidator.notice.NoticeContainer;
 import org.mobilitydata.gtfsvalidator.parsing.CsvFile;
 import org.mobilitydata.gtfsvalidator.parsing.CsvHeader;
@@ -25,15 +24,27 @@ import org.mobilitydata.gtfsvalidator.validator.SingleEntityValidator;
 import org.mobilitydata.gtfsvalidator.validator.ValidatorProvider;
 import org.mobilitydata.gtfsvalidator.validator.ValidatorUtil;
 
-public final class AnyTableLoader {
+/** This class loads csv files specifically. */
+public final class CsvFileLoader extends TableLoader {
 
-  private static final FluentLogger logger = FluentLogger.forEnclosingClass();
+  private CsvFileLoader() {}
+  // Create the singleton and add a method to obtain it
+  private static final CsvFileLoader INSTANCE = new CsvFileLoader();
 
-  public static GtfsTableContainer load(
-      GtfsTableDescriptor tableDescriptor,
+  @Nonnull
+  public static CsvFileLoader getInstance() {
+    return INSTANCE;
+  }
+
+  private final FluentLogger logger = FluentLogger.forEnclosingClass();
+
+  @Override
+  public GtfsEntityContainer<?, ?> load(
+      GtfsFileDescriptor fileDescriptor,
       ValidatorProvider validatorProvider,
       InputStream csvInputStream,
       NoticeContainer noticeContainer) {
+    GtfsTableDescriptor tableDescriptor = (GtfsTableDescriptor) fileDescriptor;
     final String gtfsFilename = tableDescriptor.gtfsFilename();
 
     CsvFile csvFile;
@@ -46,13 +57,11 @@ public final class AnyTableLoader {
       csvFile = new CsvFile(csvInputStream, gtfsFilename, settings);
     } catch (TextParsingException e) {
       noticeContainer.addValidationNotice(new CsvParsingFailedNotice(gtfsFilename, e));
-      return tableDescriptor.createContainerForInvalidStatus(
-          GtfsTableContainer.TableStatus.INVALID_HEADERS);
+      return tableDescriptor.createContainerForInvalidStatus(TableStatus.INVALID_HEADERS);
     }
     if (csvFile.isEmpty()) {
       noticeContainer.addValidationNotice(new EmptyFileNotice(gtfsFilename));
-      return tableDescriptor.createContainerForInvalidStatus(
-          GtfsTableContainer.TableStatus.EMPTY_FILE);
+      return tableDescriptor.createContainerForInvalidStatus(TableStatus.EMPTY_FILE);
     }
     final CsvHeader header = csvFile.getHeader();
     final ImmutableList<GtfsColumnDescriptor> columnDescriptors = tableDescriptor.getColumns();
@@ -60,8 +69,7 @@ public final class AnyTableLoader {
         validateHeaders(validatorProvider, gtfsFilename, header, columnDescriptors);
     noticeContainer.addAll(headerNotices);
     if (headerNotices.hasValidationErrors()) {
-      return tableDescriptor.createContainerForInvalidStatus(
-          GtfsTableContainer.TableStatus.INVALID_HEADERS);
+      return tableDescriptor.createContainerForInvalidStatus(TableStatus.INVALID_HEADERS);
     }
     final int nColumns = columnDescriptors.size();
     final ImmutableMap<String, GtfsFieldLoader> fieldLoadersMap = tableDescriptor.getFieldLoaders();
@@ -84,7 +92,8 @@ public final class AnyTableLoader {
     final List<GtfsEntity> entities = new ArrayList<>();
     boolean hasUnparsableRows = false;
     final List<SingleEntityValidator<GtfsEntity>> singleEntityValidators =
-        validatorProvider.createSingleEntityValidators(tableDescriptor.getEntityClass());
+        createSingleEntityValidators(tableDescriptor.getEntityClass(), header, validatorProvider);
+
     try {
       for (CsvRow row : csvFile) {
         if (row.getRowNumber() % 200000 == 0) {
@@ -117,24 +126,23 @@ public final class AnyTableLoader {
       }
     } catch (TextParsingException e) {
       noticeContainer.addValidationNotice(new CsvParsingFailedNotice(gtfsFilename, e));
-      return tableDescriptor.createContainerForInvalidStatus(
-          GtfsTableContainer.TableStatus.UNPARSABLE_ROWS);
+      return tableDescriptor.createContainerForInvalidStatus(TableStatus.UNPARSABLE_ROWS);
     } finally {
       logFieldCacheStats(gtfsFilename, fieldCaches, columnDescriptors);
     }
     if (hasUnparsableRows) {
       logger.atSevere().log("Failed to parse some rows in %s", gtfsFilename);
-      return tableDescriptor.createContainerForInvalidStatus(
-          GtfsTableContainer.TableStatus.UNPARSABLE_ROWS);
+      return tableDescriptor.createContainerForInvalidStatus(TableStatus.UNPARSABLE_ROWS);
     }
     GtfsTableContainer table =
         tableDescriptor.createContainerForHeaderAndEntities(header, entities, noticeContainer);
+
     ValidatorUtil.invokeSingleFileValidators(
-        validatorProvider.createSingleFileValidators(table), noticeContainer);
+        createSingleFileValidators(table, validatorProvider), noticeContainer);
     return table;
   }
 
-  private static NoticeContainer validateHeaders(
+  private NoticeContainer validateHeaders(
       ValidatorProvider validatorProvider,
       String gtfsFilename,
       CsvHeader header,
@@ -160,7 +168,7 @@ public final class AnyTableLoader {
     return headerNotices;
   }
 
-  private static void logFieldCacheStats(
+  private void logFieldCacheStats(
       String gtfsFilename,
       FieldCache[] fieldCaches,
       ImmutableList<GtfsColumnDescriptor> columnDescriptors) {
@@ -177,24 +185,5 @@ public final class AnyTableLoader {
             fieldCache.getMissRatio() * 100.0);
       }
     }
-  }
-
-  public static GtfsTableContainer loadMissingFile(
-      GtfsTableDescriptor tableDescriptor,
-      ValidatorProvider validatorProvider,
-      NoticeContainer noticeContainer) {
-    String gtfsFilename = tableDescriptor.gtfsFilename();
-    GtfsTableContainer table =
-        tableDescriptor.createContainerForInvalidStatus(
-            GtfsTableContainer.TableStatus.MISSING_FILE);
-    if (tableDescriptor.isRecommended()) {
-      noticeContainer.addValidationNotice(new MissingRecommendedFileNotice(gtfsFilename));
-    }
-    if (tableDescriptor.isRequired()) {
-      noticeContainer.addValidationNotice(new MissingRequiredFileNotice(gtfsFilename));
-    }
-    ValidatorUtil.invokeSingleFileValidators(
-        validatorProvider.createSingleFileValidators(table), noticeContainer);
-    return table;
   }
 }

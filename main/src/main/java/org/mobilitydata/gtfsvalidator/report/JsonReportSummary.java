@@ -6,7 +6,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.mobilitydata.gtfsvalidator.performance.MemoryUsage;
 import org.mobilitydata.gtfsvalidator.report.model.AgencyMetadata;
+import org.mobilitydata.gtfsvalidator.report.model.FeatureMetadata;
 import org.mobilitydata.gtfsvalidator.report.model.FeedMetadata;
 import org.mobilitydata.gtfsvalidator.runner.ValidationRunnerConfig;
 import org.mobilitydata.gtfsvalidator.util.VersionInfo;
@@ -29,14 +31,17 @@ public class JsonReportSummary {
   private String validationReportName;
   private String htmlReportName;
   private String countryCode;
+  private String dateForValidation;
   private JsonReportFeedInfo feedInfo;
   private List<JsonReportAgencyMetadata> agencies;
   private Set<String> files;
+  private Double validationTimeSeconds;
+  public List<MemoryUsage> memoryUsageRecords;
 
   @SerializedName("counts")
   private JsonReportCounts jsonReportCounts;
 
-  private List<String> gtfsComponents;
+  private List<String> gtfsFeatures;
 
   public JsonReportSummary(
       FeedMetadata feedMetadata,
@@ -55,6 +60,7 @@ public class JsonReportSummary {
       this.validationReportName = config.validationReportFileName();
       this.htmlReportName = config.htmlReportFileName();
       this.countryCode = config.countryCode().getCountryCode();
+      this.dateForValidation = config.dateForValidation().toString();
     } else {
       logger.atSevere().log(
           "No validation configuration for JSON report, there will be missing data in the report.");
@@ -63,6 +69,8 @@ public class JsonReportSummary {
     if (feedMetadata != null) {
       if (feedMetadata.feedInfo != null) {
         this.feedInfo = new JsonReportFeedInfo(feedMetadata.feedInfo);
+        this.validationTimeSeconds = feedMetadata.validationTimeSeconds;
+        this.memoryUsageRecords = feedMetadata.memoryUsageRecords;
       } else {
         logger.atSevere().log(
             "No feed info for feed "
@@ -87,12 +95,13 @@ public class JsonReportSummary {
                 + ", there will be missing data in the report.");
       }
 
-      this.gtfsComponents =
+      this.gtfsFeatures =
           feedMetadata.specFeatures == null
               ? null
               : feedMetadata.specFeatures.entrySet().stream()
                   .filter(Map.Entry::getValue)
                   .map(Map.Entry::getKey)
+                  .map(FeatureMetadata::getFeatureName)
                   .collect(Collectors.toList());
     } else {
       logger.atSevere().log(
@@ -110,9 +119,12 @@ public class JsonReportSummary {
     public JsonReportFeedInfo(Map<String, String> feedInfo) {
       publisherName = feedInfo.get(FeedMetadata.FEED_INFO_PUBLISHER_NAME);
       publisherUrl = feedInfo.get(FeedMetadata.FEED_INFO_PUBLISHER_URL);
+      feedEmail = feedInfo.get(FeedMetadata.FEED_INFO_FEED_CONTACT_EMAIL);
       feedLanguage = feedInfo.get(FeedMetadata.FEED_INFO_FEED_LANGUAGE);
       feedStartDate = feedInfo.get(FeedMetadata.FEED_INFO_FEED_START_DATE);
       feedEndDate = feedInfo.get(FeedMetadata.FEED_INFO_FEED_END_DATE);
+      feedServiceWindowStart = feedInfo.get(FeedMetadata.FEED_INFO_SERVICE_WINDOW_START);
+      feedServiceWindowEnd = feedInfo.get(FeedMetadata.FEED_INFO_SERVICE_WINDOW_END);
     }
 
     String publisherName;
@@ -120,6 +132,9 @@ public class JsonReportSummary {
     String feedLanguage;
     String feedStartDate;
     String feedEndDate;
+    String feedEmail;
+    String feedServiceWindowStart;
+    String feedServiceWindowEnd;
   }
 
   private static class JsonReportAgencyMetadata {

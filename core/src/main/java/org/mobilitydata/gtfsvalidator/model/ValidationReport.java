@@ -23,8 +23,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import org.mobilitydata.gtfsvalidator.io.ValidationReportDeserializer;
+import org.mobilitydata.gtfsvalidator.performance.MemoryUsage;
 
 /**
  * Used to (de)serialize a {@code NoticeContainer}. This represents a validation report as a list of
@@ -41,6 +43,8 @@ public class ValidationReport {
           .serializeSpecialFloatingPointValues()
           .create();
   private final Set<NoticeReport> notices;
+  private final Double validationTimeSeconds;
+  private List<MemoryUsage> memoryUsageRecords;
 
   /**
    * Public constructor needed for deserialization by {@code ValidationReportDeserializer}. Only
@@ -49,7 +53,23 @@ public class ValidationReport {
    * @param noticeReports set of {@code NoticeReport}s
    */
   public ValidationReport(Set<NoticeReport> noticeReports) {
+    this(noticeReports, null, null);
+  }
+
+  /**
+   * Public constructor needed for deserialization by {@code ValidationReportDeserializer}. Only
+   * stores information for error {@code NoticeReport}.
+   *
+   * @param noticeReports set of {@code NoticeReport}s
+   * @param validationTimeSeconds the time taken to validate the GTFS dataset
+   */
+  public ValidationReport(
+      Set<NoticeReport> noticeReports,
+      Double validationTimeSeconds,
+      List<MemoryUsage> memoryUsageRecords) {
     this.notices = Collections.unmodifiableSet(noticeReports);
+    this.validationTimeSeconds = validationTimeSeconds;
+    this.memoryUsageRecords = memoryUsageRecords;
   }
 
   /**
@@ -69,6 +89,13 @@ public class ValidationReport {
     return notices;
   }
 
+  public Double getValidationTimeSeconds() {
+    return validationTimeSeconds;
+  }
+
+  public List<MemoryUsage> getMemoryUsageRecords() {
+    return memoryUsageRecords;
+  }
   /**
    * Determines if two validation reports are equal regardless of the order of the fields in the set
    * of {@code NoticeReport}.

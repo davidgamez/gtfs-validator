@@ -23,6 +23,7 @@ import java.io.*;
 import java.net.URL;
 import java.nio.file.Path;
 import java.util.*;
+import org.mobilitydata.gtfsvalidator.util.VersionResolver;
 import org.mobilitydata.gtfsvalidator.web.service.util.JobMetadata;
 import org.mobilitydata.gtfsvalidator.web.service.util.StorageHelper;
 import org.mobilitydata.gtfsvalidator.web.service.util.ValidationHandler;
@@ -43,6 +44,8 @@ public class ValidationController {
   @Autowired private StorageHelper storageHelper;
   @Autowired private ValidationHandler validationHandler;
 
+  @Autowired private VersionResolver versionResolver;
+
   /**
    * Creates a new job id and returns it to the client. If a url is provided, the file is downloaded
    * from the url and saved to GCS. If no url is provided, a unique url is generated for the client
@@ -59,7 +62,8 @@ public class ValidationController {
           storageHelper.saveJobMetadata(new JobMetadata(jobId, body.getCountryCode()));
         }
         if (!Strings.isNullOrEmpty(body.getUrl())) {
-          storageHelper.saveJobFileFromUrl(jobId, body.getUrl());
+          var validatorVersion = versionResolver.resolveCurrentVersion();
+          storageHelper.saveJobFileFromUrl(jobId, body.getUrl(), validatorVersion.orElse(null));
         } else {
           uploadUrl = storageHelper.generateUniqueUploadUrl(jobId);
         }
@@ -72,6 +76,21 @@ public class ValidationController {
     }
   }
 
+  public class ExecutionResult {
+    private String status;
+    private String error;
+
+    // Constructor
+    public ExecutionResult(String status, String error) {
+      this.status = status;
+      this.error = error;
+    }
+
+    public ExecutionResult(String status) {
+      this(status, "");
+    }
+  }
+
   /**
    * Runs the validator on the GTFS file associated with the job id. The GTFS file is downloaded
    * from GCS, extracted locally, validated, and the results are uploaded to GCS.
@@ -81,6 +100,7 @@ public class ValidationController {
       @RequestBody GoogleCloudPubsubMessage googleCloudPubsubMessage) {
     File tempFile = null;
     Path outputPath = null;
+    String jobId = null;
     try {
       var message = googleCloudPubsubMessage.getMessage();
       if (message == null) {
@@ -89,24 +109,35 @@ public class ValidationController {
       }
 
       ValidationJobMetaData jobData = getFeedFileMetaData(message);
-      var jobId = jobData.getJobId();
+      jobId = jobData.getJobId();
+
       var fileName = jobData.getFileName();
 
       var countryCode = storageHelper.getJobMetadata(jobId).getCountryCode();
 
       // copy the file from GCS to a temp directory
       tempFile = storageHelper.downloadFeedFileFromStorage(jobId, fileName);
-      outputPath = storageHelper.createOutputFolderForJob(jobId);
 
-      // extracts feed files from zip to temp output directory, validates, and returns
-      // the path to the output directory
-      validationHandler.validateFeed(tempFile, outputPath, countryCode);
+      outputPath = storageHelper.createOutputFolderForJob(jobId);
+      try {
+        // extracts feed files from zip to temp output directory, validates
+        validationHandler.validateFeed(tempFile, outputPath, countryCode);
+        storageHelper.writeExecutionResultFile(new ExecutionResult("success"), outputPath);
+      } catch (Exception exc) {
+        logger.error("Error", exc);
+        Sentry.captureException(exc);
+        storageHelper.writeExecutionResultFile(
+            new ExecutionResult("error", exc.getMessage()), outputPath);
+      }
 
       // upload the extracted files and the validation results from outputPath to GCS
       storageHelper.uploadFilesToStorage(jobId, outputPath);
 
       return new ResponseEntity(HttpStatus.OK);
     } catch (Exception exc) {
+      // We are here because there was an exception in code not within the validator, i.e. probably
+      // related to
+      // cloud storage. We return 500 in that case so the GCP retry mechanism can do its magic.
       logger.error("Error", exc);
       Sentry.captureException(exc);
       throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error", exc);
@@ -119,6 +150,22 @@ public class ValidationController {
         outputPath.toFile().delete();
       }
     }
+  }
+
+  @GetMapping("/version")
+  public VersionResponse currentVersion() {
+    VersionResponse versionResponse;
+    try {
+      Optional<String> versionInfo = versionResolver.resolveCurrentVersion();
+      if (versionInfo.isEmpty()) {
+        throw new ResponseStatusException(
+            HttpStatus.INTERNAL_SERVER_ERROR, "Current Version Not Found");
+      }
+      versionResponse = new VersionResponse(versionInfo.get());
+    } catch (IOException e) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error", e);
+    }
+    return versionResponse;
   }
 
   @PostMapping("/error")

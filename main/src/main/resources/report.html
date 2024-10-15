@@ -4,6 +4,12 @@
     <title>GTFS Schedule Validation Report</title>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8; width=device-width, initial-scale=1"/>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+    <script>
+      $(document).ready(function () {
+        $(document).tooltip();
+      });
+    </script>
     <style>
     body {
         font-family: Helvetica, Arial, sans-serif;
@@ -35,6 +41,11 @@
 
     table {
         width: 100%;
+    }
+
+    table caption {
+        text-align: left;
+        margin: 0.5em 0;
     }
 
     table th {
@@ -112,6 +123,7 @@
         padding: 2px 5px;
         margin-right: 2px;
         margin-bottom: 2px;
+        text-align: center;
     }
 
     .tooltip {
@@ -122,7 +134,6 @@
     }
 
     .tooltip .tooltiptext {
-        visibility: hidden;
         background-color: #555;
         color: #fff;
         text-align: center;
@@ -204,11 +215,19 @@
         display: table-row;
     }
 
-    #gtfs-components-container > div {
+    #gtfs-features-container > div {
         display: flex;
         justify-content: center;
         align-content: center;
         flex-wrap: wrap;
+    }
+
+    .warning-display {
+        padding: 10px;
+        border: solid 2px orange;
+        border-radius: 11px;
+        width: fit-content;
+        font-weight: bold;
     }
 </style>
 
@@ -224,8 +243,14 @@
         <span th:text="${config.gtfsSource}"></span><span
                 th:text="${config.countryCode.isUnknown()} ? '. No country code was provided.' : ', with the country code: ' + ${config.countryCode} + '.'"></span>
         </br>
+        <span th:if="${is_different_date}" th:text="'The date used during validation was ' + ${config.dateForValidation} + '.'"></span></p>
 
     <p>Use this report alongside our <a href="https://gtfs-validator.mobilitydata.org/rules.html">documentation</a>.</p>
+
+    <p class="warning-display" th:if="${metadata.hasFlexFeatures}">
+        &#9888; This feed contains GTFS Flex features. Please note that GTFS Flex validation support is still in development.
+        You can manually review all the validation rules for Flex data <a href="https://docs.google.com/document/d/1QABoIeOdR6lAB7A6_X6WIbZwC7EnAIZvm_hRNwNQeoI/edit#heading=h.mky28yjwt08z">here</a>.
+    </p>
 
     <p class="version-update" th:if="${summary.newVersionOfValidatorAvailable}">A new version of the <a
             href="https://github.com/MobilityData/gtfs-validator/releases">Canonical GTFS Schedule validator</a> is available!
@@ -254,14 +279,21 @@
                 <hr />
                 <dl>
                     <div th:each="info: ${metadata.feedInfo}">
-                        <dd th:text="${info.key} + ':'" />
-                        <dt>
-                        <span th:if="${info.key.contains('URL') and info.value != 'N/A'}">
-                            <a th:href="${info.value}" target="_blank" th:text="${info.value}" />
-                        </span>
-                            <span th:if="${info.key.contains('URL') and info.value == 'N/A'}" th:text="${info.value}"></span>
-                            <span th:unless="${info.key.contains('URL')}" th:text="${info.value}" />
-                        </dt>
+                        <div th:with="isNotServiceWindow=${info.key != 'Service Window Start' and info.key != 'Service Window End'}">
+                            <dd th:if="${isNotServiceWindow}" th:text="${info.key} + ':'" />
+                            <dt th:if="${isNotServiceWindow}">
+                            <span th:if="${info.key.contains('URL') and info.value != 'N/A'}">
+                                <a th:href="${info.value}" target="_blank" th:text="${info.value}" />
+                            </span>
+                                <span th:if="${info.key.contains('URL') and info.value == 'N/A'}" th:text="${info.value}"></span>
+                                <span th:unless="${info.key.contains('URL')}" th:text="${info.value}"/>
+                                <span th:if="${info.key == 'Service Window'}" >
+                                     <a href="#" class="tooltip" onclick="event.preventDefault();"><span>(?)</span>
+                                        <span class="tooltiptext" style="transform: translateX(-100%)">The range of service dates covered by the feed, based on trips with an associated service_id in calendar.txt and/or calendar_dates.txt</span>
+                                    </a>
+                                </span>
+                            </dt>
+                        </div>
                     </div>
                 </dl>
             </div>
@@ -279,16 +311,18 @@
                     <li th:each="count: ${metadata.counts}"><span th:text="${count.key} + ': ' + ${count.value}" /></li>
                 </ul>
             </div>
-            <div class="summary-cell summary_list" id="gtfs-components-container">
+            <div class="summary-cell summary_list" id="gtfs-features-container">
                 <h4>
-                    GTFS Components included
+                    GTFS Features included
                     <a href="#" class="tooltip" onclick="event.preventDefault();"><span>(?)</span>
-                        <span class="tooltiptext" style="transform: translateX(-100%)">GTFS components provide a standardized vocabulary to define and describe features that are officially adopted in GTFS.</span>
+                        <span class="tooltiptext" style="transform: translateX(-100%)">GTFS features provide a standardized vocabulary to define and describe features that are officially adopted in GTFS.</span>
                     </a>
                 </h4>
                 <hr />
                 <div>
-                    <span class="spec-feature" th:each="feature: ${metadata.specFeatures}" th:if="${feature.value}" th:text="${feature.key}" />
+                    <span class="spec-feature" th:each="feature: ${metadata.specFeatures}" th:if="${feature.value}">
+                        <a th:href="${feature.key.getDocUrl()}" th:text="${feature.key.getFeatureName()}" target="_blank"></a>
+                    </span>
                 </div>
             </div>
         </div>
@@ -326,7 +360,7 @@
                             <h3 th:text="${noticesByCode.key}" />
                             <p th:utext="${noticesByCode.value[0].description}" />
                             <p> You can see more about this notice <a
-                                    th:href="@{'https://gtfs-validator.mobilitydata.org/rules.html#' + ${noticesByCode.key}}">here</a>.
+                                    th:href="@{'https://gtfs-validator.mobilitydata.org/rules.html#' + ${noticesByCode.key} + '-rule'}">here</a>.
                             </p>
                              <p th:if="${noticesByCode.value.size > 50}">Only the first 50 of <span th:text="${noticesByCode.value.size}"></span> affected records are displayed below.</p>
                             <table>
